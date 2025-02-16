@@ -18,6 +18,20 @@ begin
  t.Free; 
 ```
 
+## This library can save to these TIFF formats:
+
+- uncompressed
+- CCITT3
+- CCITT4
+- LZW   
+- JPEG  
+- ADOBE DEFLATE
+- PACKBITS
+- DEFLATE (aka ZIP)
+- LZMA2     //rare
+- Zstandard //rare
+- WebP      //rare
+
 ## This unit uses LibTIFF:
 https://gitlab.com/libtiff/libtiff
 License:
