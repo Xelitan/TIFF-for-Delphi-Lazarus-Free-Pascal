@@ -36,3 +36,12 @@ begin
 https://gitlab.com/libtiff/libtiff
 License:
 https://gitlab.com/libtiff/libtiff/-/blob/master/LICENSE.md
+
+## Linux (Debian, Ubuntu, Mint)
+
+1) apt install apt-file libtiff-dev
+2) apt-file search libtiff.so
+It will list you how your libtiff.so files are named *exactly* and where they are
+3) Open TifImage.pas and edit "const LIB_TIF"
+4) Change the value of that const. Enter filename (excluding path) found in step 2
+5) Compile and run
