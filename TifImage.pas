@@ -107,8 +107,11 @@ const
   procedure _TIFFfree(ptr: Pointer); cdecl; external LIB_TIF;
   procedure TIFFClose(tif: PTIFF); cdecl; external LIB_TIF;
   function TIFFOpen(name: PAnsiChar; mode: PAnsiChar): PTIFF; cdecl; external LIB_TIF;
-  function TIFFSetField4(tif: PTIFF; tag: Cardinal; v1,v2,v3,v4: UInt16): Integer; cdecl; external LIB_TIF name 'TIFFSetField';
+  function TIFFSetFieldV(tif: PTIFF; tag: Cardinal): Integer; cdecl; varargs; external LIB_TIF name 'TIFFSetField';
   function TIFFSetField(tif: PTIFF; tag: Cardinal; value: UInt32): Integer; cdecl; external LIB_TIF;
+  function TIFFSetFieldF(tif: PTIFF; tag: Cardinal; value: Double): Integer; cdecl; external LIB_TIF name 'TIFFSetField';
+  function TIFFVSetField(tif: PTIFF; tag: Cardinal; value: Pointer): Integer; cdecl; external LIB_TIF;
+
   function TIFFWriteScanline(tif: PTIFF; buf: Pointer; row: UInt32; sample: Word): Integer; cdecl; external LIB_TIF;
 
 type
@@ -265,14 +268,8 @@ var Tiff: PTIFF;
     Dst: PByte;
     G,V: Byte;
     i: Integer;
-    R: TFileStream;
-    Head: String;
 begin
   AStr.Stream := TMemoryStream.Create;
-
-  R := TFileStream.Create('czemu.pgm', fmCreate);
-  Head := 'P4'+#13+'259 237'#13;
-  R.Write(HEad[1], Length(Head));
 
   tiff := TIFFClientOpen('', 'w4', thandle_t(@AStr), @ReadFun, @WriteFun, @SeekFun, @CloseFun, @SizeFun, nil, nil);
 
@@ -284,7 +281,7 @@ begin
     TIFFSetField(Tiff, TIFFTAG_IMAGEWIDTH, FBmp.Width);
     TIFFSetField(Tiff, TIFFTAG_IMAGELENGTH, FBmp.Height);
     if FPixelFormat <> pf1bit then begin
-      TIFFSetField4(Tiff, TIFFTAG_BITSPERSAMPLE, 8,8,8,8);
+      TIFFSetFieldV(Tiff, TIFFTAG_BITSPERSAMPLE, 8,8,8,8);
       TIFFSetField(Tiff, TIFFTAG_SAMPLESPERPIXEL, 4);
       TIFFSetField(Tiff, TIFFTAG_PHOTOMETRIC, ord(PHOTOMETRIC_RGB));
     end
@@ -297,8 +294,8 @@ begin
     TIFFSetField(Tiff, TIFFTAG_COMPRESSION, ord(FCompression));
     TIFFSetField(Tiff, TIFFTAG_ORIENTATION, ord(ORIENTATION_TOPLEFT));
     TIFFSetField(Tiff, TIFFTAG_ROWSPERSTRIP, FBmp.Height);
-    TIFFSetField(Tiff, TIFFTAG_XRESOLUTION, 72);
-    TIFFSetField(Tiff, TIFFTAG_YRESOLUTION, 72);
+    TIFFSetFieldF(Tiff, TIFFTAG_XRESOLUTION, 72);
+    TIFFSetFieldF(Tiff, TIFFTAG_YRESOLUTION, 72);
     TIFFSetField(Tiff, TIFFTAG_RESOLUTIONUNIT, 2);
 
     if FPixelFormat <> pf1bit then begin
@@ -353,8 +350,6 @@ begin
     Str.CopyFrom(AStr.Stream, AStr.Stream.Size);
     AStr.Stream.Free;
   end;
-
-  R.FRee;
 end;
 
 procedure TTifImage.Draw(ACanvas: TCanvas; const Rect: TRect);
