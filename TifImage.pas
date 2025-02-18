@@ -5,8 +5,8 @@ unit TifImage;
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 // Description:	Reader and writer for TIFF images                             //
-// Version:	0.1                                                           //
-// Date:	16-FEB-2025                                                   //
+// Version:	0.2                                                           //
+// Date:	18-FEB-2025                                                   //
 // License:     MIT                                                           //
 // Target:	Win64, Free Pascal, Delphi                                    //
 // Copyright:	(c) 2025 Xelitan.com.                                         //
@@ -16,7 +16,7 @@ unit TifImage;
 
 interface
 
-uses Classes, Graphics, SysUtils, Types, Dialogs;
+uses Classes, Graphics, SysUtils, Types, Math, Dialogs;
 
 const LIB_TIF = 'libtiff.dll';
 
@@ -122,6 +122,7 @@ type
   TTifImage = class(TGraphic)
   private
     FBmp: TBitmap;
+    FPixelFormat: TPixelFormat;
     FCompression: TTifCompression;
     procedure DecodeFromStream(Str: TStream);
     procedure EncodeToStream(Str: TStream);
@@ -262,8 +263,16 @@ var Tiff: PTIFF;
     Buffer: array of Byte;
     x,y: Integer;
     Dst: PByte;
+    G,V: Byte;
+    i: Integer;
+    R: TFileStream;
+    Head: String;
 begin
   AStr.Stream := TMemoryStream.Create;
+
+  R := TFileStream.Create('czemu.pgm', fmCreate);
+  Head := 'P4'+#13+'259 237'#13;
+  R.Write(HEad[1], Length(Head));
 
   tiff := TIFFClientOpen('', 'w4', thandle_t(@AStr), @ReadFun, @WriteFun, @SeekFun, @CloseFun, @SizeFun, nil, nil);
 
@@ -274,9 +283,16 @@ begin
     // Set required TIFF tags
     TIFFSetField(Tiff, TIFFTAG_IMAGEWIDTH, FBmp.Width);
     TIFFSetField(Tiff, TIFFTAG_IMAGELENGTH, FBmp.Height);
-    TIFFSetField4(Tiff, TIFFTAG_BITSPERSAMPLE, 8,8,8,8);
-    TIFFSetField(Tiff, TIFFTAG_SAMPLESPERPIXEL, 4);
-    TIFFSetField(Tiff, TIFFTAG_PHOTOMETRIC, ord(PHOTOMETRIC_RGB));
+    if FPixelFormat <> pf1bit then begin
+      TIFFSetField4(Tiff, TIFFTAG_BITSPERSAMPLE, 8,8,8,8);
+      TIFFSetField(Tiff, TIFFTAG_SAMPLESPERPIXEL, 4);
+      TIFFSetField(Tiff, TIFFTAG_PHOTOMETRIC, ord(PHOTOMETRIC_RGB));
+    end
+    else begin
+      TIFFSetField(Tiff, TIFFTAG_BITSPERSAMPLE, 1);
+      TIFFSetField(Tiff, TIFFTAG_SAMPLESPERPIXEL, 1);
+      TIFFSetField(Tiff, TIFFTAG_PHOTOMETRIC, ord(PHOTOMETRIC_BLACKWHITE));
+    end;
     TIFFSetField(Tiff, TIFFTAG_PLANARCONFIG, ord(PLANARCONFIG_CONTIG));
     TIFFSetField(Tiff, TIFFTAG_COMPRESSION, ord(FCompression));
     TIFFSetField(Tiff, TIFFTAG_ORIENTATION, ord(ORIENTATION_TOPLEFT));
@@ -285,25 +301,50 @@ begin
     TIFFSetField(Tiff, TIFFTAG_YRESOLUTION, 72);
     TIFFSetField(Tiff, TIFFTAG_RESOLUTIONUNIT, 2);
 
-    SetLength(Buffer, FBmp.Width * 4);
-    for y := 0 to FBmp.Height - 1 do
-    begin
-      P := FBmp.ScanLine[y];
-      Dst := @Buffer[0];
+    if FPixelFormat <> pf1bit then begin
+      SetLength(Buffer, FBmp.Width * 4);
+      for y := 0 to FBmp.Height - 1 do begin
+        P := FBmp.ScanLine[y];
+        Dst := @Buffer[0];
 
-      for x := 0 to FBmp.Width - 1 do
-      begin
-        Dst^ := P[4*x+2];
-        Inc(Dst);
-        Dst^ := P[4*x+1];
-        Inc(Dst);
-        Dst^ := P[4*x  ];
-        Inc(Dst);
-        Dst^ := 255-P[4*x+3]; //alpha
-        Inc(Dst);
+        for x := 0 to FBmp.Width - 1 do begin
+          Dst^ := P[4*x+2];
+          Inc(Dst);
+          Dst^ := P[4*x+1];
+          Inc(Dst);
+          Dst^ := P[4*x  ];
+          Inc(Dst);
+          Dst^ := 255-P[4*x+3]; //alpha
+          Inc(Dst);
+        end;
+
+        if TIFFWriteScanline(Tiff, @Buffer[0], y, 0) < 0 then
+          raise Exception.CreateFmt('Error writing row %d', [y]);
       end;
-      if TIFFWriteScanline(Tiff, @Buffer[0], y, 0) < 0 then
-        raise Exception.CreateFmt('Error writing row %d', [y]);
+    end
+    else begin
+      SetLength(Buffer, ceil(FBmp.Width/8));
+      for y := 0 to FBmp.Height - 1 do begin
+        P := FBmp.ScanLine[y];
+        Dst := @Buffer[0];
+        G := 0;
+
+        for x := 0 to ceil(FBmp.Width/8) - 1 do begin
+          G := 0;
+
+          for i:=0 to 7 do begin
+            if P[4*(8*x+i)] > 127 then V := 1
+            else               V := 0;
+            G := G + (V shl (7-i));
+          end;
+
+          Dst^ := G; //P[x];
+          Inc(Dst);
+        end;
+
+        if TIFFWriteScanline(Tiff, @Buffer[0], y, 0) < 0 then
+          raise Exception.CreateFmt('Error writing row %d', [y]);
+      end;
     end;
   finally
     TIFFClose(Tiff);
@@ -312,6 +353,8 @@ begin
     Str.CopyFrom(AStr.Stream, AStr.Stream.Size);
     AStr.Stream.Free;
   end;
+
+  R.FRee;
 end;
 
 procedure TTifImage.Draw(ACanvas: TCanvas; const Rect: TRect);
@@ -361,6 +404,9 @@ begin
     Src := Source as TGraphic;
     FBmp.SetSize(Src.Width, Src.Height);
     FBmp.Canvas.Draw(0,0, Src);
+
+    FPixelFormat := pf32bit;
+    if Src is TBitmap then FPixelFormat := TBitmap(Src).PixelFormat;
   end;
 end;
 
