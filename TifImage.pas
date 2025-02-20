@@ -5,8 +5,8 @@ unit TifImage;
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 // Description:	Reader and writer for TIFF images                             //
-// Version:	0.2                                                           //
-// Date:	18-FEB-2025                                                   //
+// Version:	0.3                                                           //
+// Date:	20-FEB-2025                                                   //
 // License:     MIT                                                           //
 // Target:	Win64, Free Pascal, Delphi                                    //
 // Copyright:	(c) 2025 Xelitan.com.                                         //
@@ -80,7 +80,10 @@ const
   TIFFTAG_XRESOLUTION     = 282;
   TIFFTAG_YRESOLUTION     = 283;
   TIFFTAG_RESOLUTIONUNIT  = 296;
+  TIFFTAG_SOFTWARE        = 305;
   TIFFTAG_EXTRASAMPLES    = 338;
+  TIFFTAG_HOSTCOMPUTER    = 316;
+  TIFFTAG_ARTIST          = 315;
 
   // Photometric Interpretations
   PHOTOMETRIC_WHITEBLACK    = 0;
@@ -109,8 +112,11 @@ const
   function TIFFOpen(name: PAnsiChar; mode: PAnsiChar): PTIFF; cdecl; external LIB_TIF;
   function TIFFSetFieldV(tif: PTIFF; tag: Cardinal): Integer; cdecl; varargs; external LIB_TIF name 'TIFFSetField';
   function TIFFSetField(tif: PTIFF; tag: Cardinal; value: UInt32): Integer; cdecl; external LIB_TIF;
+  function TIFFSetFieldP(tif: PTIFF; tag: Cardinal; value: PAnsiChar): Integer; cdecl; external LIB_TIF name 'TIFFSetField';
   function TIFFSetFieldF(tif: PTIFF; tag: Cardinal; value: Double): Integer; cdecl; external LIB_TIF name 'TIFFSetField';
   function TIFFVSetField(tif: PTIFF; tag: Cardinal; value: Pointer): Integer; cdecl; external LIB_TIF;
+
+    function TIFFSetFieldFF(tif: PTIFF; tag: Cardinal; v1,v2: LongInt): Integer; cdecl; external LIB_TIF name 'TIFFSetField';
 
   function TIFFWriteScanline(tif: PTIFF; buf: Pointer; row: UInt32; sample: Word): Integer; cdecl; external LIB_TIF;
 
@@ -125,6 +131,7 @@ type
   TTifImage = class(TGraphic)
   private
     FBmp: TBitmap;
+    FDpi: Integer;
     FPixelFormat: TPixelFormat;
     FCompression: TTifCompression;
     procedure DecodeFromStream(Str: TStream);
@@ -140,6 +147,7 @@ type
     procedure SetWidth(Value: Integer);override;
   public
     procedure SetCompression(Value: TTifCompression);
+    procedure SetDpi(Value: Integer);
     procedure Assign(Source: TPersistent); override;
     procedure LoadFromStream(Stream: TStream); override;
     procedure SaveToStream(Stream: TStream); override;
@@ -259,6 +267,28 @@ begin
   end;
 end;
 
+function Indexx(Buff: PByteArray; Len: Integer; Find: array of byte): Integer;
+var i: Integer;
+begin
+  Result := -1;
+  for i:=0 to Len-5 do begin
+    if (Buff[i] = Find[0]) and (Buff[i+1] = Find[1]) and (Buff[i+2] = Find[2]) and (Buff[i+3] = Find[3]) then Exit(i);
+  end;
+end;
+
+procedure ChangeTag(Str: TStream; Buff: PByteArray; BuffSize: Integer; Tag: array of byte; Value: DWord);
+var Pos: Integer;
+    Offset: DWord;
+begin
+  Pos := Indexx(@Buff[0], BuffSize, Tag);
+  if Pos > 0 then begin
+    Move(Buff[Pos+8], Offset, 4);
+
+    Str.Position := Offset;
+    Str.Write(Value, 4);
+  end;
+end;
+
 procedure TTifImage.EncodeToStream(Str: TStream);
 var Tiff: PTIFF;
     AStr: TTIFFMemoryStream;
@@ -268,6 +298,10 @@ var Tiff: PTIFF;
     Dst: PByte;
     G,V: Byte;
     i: Integer;
+
+    Buff: array of byte;
+    BuffSize, Pos: Integer;
+    Find: array[0..3] of Byte;
 begin
   AStr.Stream := TMemoryStream.Create;
 
@@ -294,8 +328,9 @@ begin
     TIFFSetField(Tiff, TIFFTAG_COMPRESSION, ord(FCompression));
     TIFFSetField(Tiff, TIFFTAG_ORIENTATION, ord(ORIENTATION_TOPLEFT));
     TIFFSetField(Tiff, TIFFTAG_ROWSPERSTRIP, FBmp.Height);
-    TIFFSetFieldF(Tiff, TIFFTAG_XRESOLUTION, 72);
-    TIFFSetFieldF(Tiff, TIFFTAG_YRESOLUTION, 72);
+    TIFFSetFieldF(Tiff, TIFFTAG_XRESOLUTION, 300);
+    TIFFSetFieldF(Tiff, TIFFTAG_YRESOLUTION, 300);
+    TIFFSetFieldP(Tiff, TIFFTAG_SOFTWARE, PAnsiChar('Xelitan TIFF'));
     TIFFSetField(Tiff, TIFFTAG_RESOLUTIONUNIT, 2);
 
     if FPixelFormat <> pf1bit then begin
@@ -350,6 +385,29 @@ begin
     Str.CopyFrom(AStr.Stream, AStr.Stream.Size);
     AStr.Stream.Free;
   end;
+
+
+  //change DPI
+  Str.Position := Max(0, Str.Size - 8000);
+  BuffSize := Str.Size - Str.Position;
+  SetLength(Buff, BuffSize);
+  Str.Read(Buff[0], BuffSize);
+
+  Find[0] := $1a;
+  Find[1] := $01;
+  Find[2] := $05;
+  Find[3] := $00;
+
+  ChangeTag(Str, @Buff[0], BuffSize, Find, FDpi);
+
+  Find[0] := $1b;
+  Find[1] := $01;
+  Find[2] := $05;
+  Find[3] := $00;
+
+  ChangeTag(Str, @Buff[0], BuffSize, Find, FDpi);
+
+  Str.Position := Str.Size;
 end;
 
 procedure TTifImage.Draw(ACanvas: TCanvas; const Rect: TRect);
@@ -390,6 +448,11 @@ end;
 procedure TTifImage.SetCompression(Value: TTifCompression);
 begin
   FCompression := Value;
+end;
+
+procedure TTifImage.SetDpi(Value: Integer);
+begin
+  FDpi := Value;
 end;
 
 procedure TTifImage.Assign(Source: TPersistent);
