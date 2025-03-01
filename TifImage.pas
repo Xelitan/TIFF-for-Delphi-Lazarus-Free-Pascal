@@ -5,8 +5,8 @@ unit TifImage;
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
 // Description:	Reader and writer for TIFF images                             //
-// Version:	0.3                                                           //
-// Date:	20-FEB-2025                                                   //
+// Version:	0.4                                                           //
+// Date:	01-MAR-2025                                                   //
 // License:     MIT                                                           //
 // Target:	Win64, Free Pascal, Delphi                                    //
 // Copyright:	(c) 2025 Xelitan.com.                                         //
@@ -153,6 +153,7 @@ type
     procedure SaveToStream(Stream: TStream); override;
     constructor Create; override;
     destructor Destroy; override;
+    function ToBitmap: TBitmap;
   end;
 
 implementation
@@ -492,6 +493,11 @@ destructor TTifImage.Destroy;
 begin
   FBmp.Free;
   inherited Destroy;
+end;
+
+function TTifImage.ToBitmap: TBitmap;
+begin
+  Result := FBmp;
 end;
 
 initialization
